@@ -1,7 +1,6 @@
-import "./polyfills.ts"
-import { BufferLike, StreamLike, normalizeInput, ReadableFromIterator } from "./input.ts"
-import { normalizeMetadata } from "./metadata.ts"
-import { loadFiles, contentLength, ForAwaitable } from "./zip.ts"
+import { BufferLike, StreamLike, normalizeInput, ReadableFromIterator } from "./input"
+import { normalizeMetadata } from "./metadata"
+import { loadFiles, contentLength, ForAwaitable } from "./zip"
 
 /** The file name, modification date and size will be read from the input;
  * extra arguments can be given to override the input’s metadata. */
@@ -58,7 +57,7 @@ function mapFiles(files: ForAwaitable<InputWithMeta | InputWithSizeMeta | InputW
       // but rewriting the code to be more explicit would make it longer
       return { done: false, value: Object.assign(normalizeInput(...dataArgs), normalizeMetadata(...metaArgs)) }
     },
-    throw: iterator.throw?.bind(iterator),
+    throw: iterator.throw && iterator.throw.bind(iterator),
     [Symbol.asyncIterator]() { return this }
   }
 }

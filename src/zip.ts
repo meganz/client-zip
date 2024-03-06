@@ -1,9 +1,9 @@
-import { makeBuffer, makeUint8Array, clampInt16, clampInt32 } from "./utils.ts"
-import { crc32 } from "./crc32.ts"
-import { formatDOSDateTime } from "./datetime.ts"
+import { makeBuffer, makeUint8Array, clampInt16, clampInt32 } from "./utils"
+import { crc32 } from "./crc32"
+import { formatDOSDateTime } from "./datetime"
 import type { ZipEntryDescription, ZipFileDescription } from "./input.ts"
-import { Metadata } from "./metadata.ts"
-import { Options } from "./index.ts"
+import { Metadata } from "./metadata"
+import { Options } from "./index"
 
 const fileHeaderSignature = 0x504b_0304, fileHeaderLength = 30
 const descriptorSignature = 0x504b_0708, descriptorLength = 16
@@ -11,6 +11,7 @@ const centralHeaderSignature = 0x504b_0102, centralHeaderLength = 46
 const endSignature = 0x504b_0506, endLength = 22
 const zip64endRecordSignature = 0x504b_0606, zip64endRecordLength = 56
 const zip64endLocatorSignature = 0x504b_0607, zip64endLocatorLength = 20
+const ZERO = BigInt(0), UINT32_MAX = BigInt(Math.pow(2, 32) - 1)
 
 export type ForAwaitable<T> = AsyncIterable<T> | Iterable<T>
 
@@ -18,28 +19,28 @@ type Zip64FieldLength = 0 | 12 | 28
 
 export function contentLength(files: Iterable<Omit<Metadata, 'nameIsBuffer'>>) {
   let centralLength = BigInt(endLength)
-  let offset = 0n
+  let offset = ZERO
   let archiveNeedsZip64 = false
   for (const file of files) {
     if (!file.encodedName) throw new Error("Every file must have a non-empty name.")
     if (file.uncompressedSize === undefined)
       throw new Error(`Missing size for file "${new TextDecoder().decode(file.encodedName)}".`)
-    const bigFile = file.uncompressedSize! >= 0xffffffffn
-    const bigOffset = offset >= 0xffffffffn
+    const bigFile = file.uncompressedSize! >= UINT32_MAX
+    const bigOffset = offset >= UINT32_MAX
     // @ts-ignore
     offset += BigInt(fileHeaderLength + descriptorLength + file.encodedName.length + (bigFile && 8)) + file.uncompressedSize
     // @ts-ignore
     centralLength += BigInt(file.encodedName.length + centralHeaderLength + (bigOffset * 12 | bigFile * 28))
-    archiveNeedsZip64 ||= bigFile
+    if (bigFile) archiveNeedsZip64 = true
   }
-  if (archiveNeedsZip64 || offset >= 0xffffffffn)
+  if (archiveNeedsZip64 || offset >= UINT32_MAX)
     centralLength += BigInt(zip64endRecordLength + zip64endLocatorLength)
   return centralLength + offset
 }
 
 export function flagNameUTF8({encodedName, nameIsBuffer}: Metadata, buffersAreUTF8?: boolean) {
   // @ts-ignore
-  return (!nameIsBuffer || (buffersAreUTF8 ?? tryUTF8(encodedName))) * 0b1000
+  return (!nameIsBuffer || (buffersAreUTF8 || tryUTF8(encodedName))) * 0b1000
 }
 const UTF8Decoder = new TextDecoder('utf8', { fatal: true })
 function tryUTF8(str: Uint8Array) {
@@ -49,9 +50,9 @@ function tryUTF8(str: Uint8Array) {
 }
 
 export async function* loadFiles(files: ForAwaitable<ZipEntryDescription & Metadata>, options: Options) {
-  const centralRecord: Uint8Array[] = []
-  let offset = 0n
-  let fileCount = 0n
+  const centralRecord: Array<Uint8Array> = []
+  let offset = ZERO
+  let fileCount = ZERO
   let archiveNeedsZip64 = false
 
   // write files
@@ -62,8 +63,8 @@ export async function* loadFiles(files: ForAwaitable<ZipEntryDescription & Metad
     if (file.isFile) {
       yield* fileData(file)
     }
-    const bigFile = file.uncompressedSize! >= 0xffffffffn
-    const bigOffset = offset >= 0xffffffffn
+    const bigFile = file.uncompressedSize! >= UINT32_MAX
+    const bigOffset = offset >= UINT32_MAX
     // @ts-ignore
     const zip64HeaderLength = (bigOffset * 12 | bigFile * 28) as Zip64FieldLength
     yield dataDescriptor(file, bigFile)
@@ -71,20 +72,23 @@ export async function* loadFiles(files: ForAwaitable<ZipEntryDescription & Metad
     centralRecord.push(centralHeader(file, offset, flags, zip64HeaderLength))
     centralRecord.push(file.encodedName)
     if (zip64HeaderLength) centralRecord.push(zip64ExtraField(file, offset, zip64HeaderLength))
-    if (bigFile) offset += 8n // because the data descriptor will have 64-bit sizes
+    if (bigFile) {
+      // because the data descriptor will have 64-bit sizes
+      offset += BigInt(8)
+      archiveNeedsZip64 = true;
+    }
     fileCount++
     offset += BigInt(fileHeaderLength + descriptorLength + file.encodedName.length) + file.uncompressedSize!
-    archiveNeedsZip64 ||= bigFile
   }
 
   // write central repository
-  let centralSize = 0n
+  let centralSize = ZERO
   for (const record of centralRecord) {
     yield record
     centralSize += BigInt(record.length)
   }
 
-  if (archiveNeedsZip64 || offset >= 0xffffffffn) {
+  if (archiveNeedsZip64 || offset >= UINT32_MAX) {
     const endZip64 = makeBuffer(zip64endRecordLength + zip64endLocatorLength)
     // 4.3.14 Zip64 end of central directory record
     endZip64.setUint32(0, zip64endRecordSignature)
@@ -136,7 +140,7 @@ export async function* fileData(file: ZipFileDescription & Metadata) {
     file.crc = crc32(bytes, 0)
     file.uncompressedSize = BigInt(bytes.length)
   } else {
-    file.uncompressedSize = 0n
+    file.uncompressedSize = ZERO
     const reader = bytes.getReader()
     while (true) {
       const { value, done } = await reader.read()

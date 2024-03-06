@@ -1,4 +1,4 @@
-import { encodeString, makeUint8Array } from "./utils.ts"
+import { encodeString, makeUint8Array } from "./utils"
 import type { BufferLike, StreamLike } from "./input.ts"
 
 export type Metadata = {
@@ -22,6 +22,7 @@ export function normalizeMetadata(input?: File | Response | BufferLike | StreamL
   if (input instanceof Response) {
     const contentDisposition = input.headers.get("content-disposition")
     const filename = contentDisposition && contentDisposition.match(/;\s*filename\*?=["']?(.*?)["']?$/i)
+    // @ts-ignore
     const urlName = filename && filename[1] || input.url && new URL(input.url).pathname.split("/").findLast(Boolean)
     const decoded = urlName && decodeURIComponent(urlName)
     // @ts-ignore allow coercion from null to zero
@@ -40,7 +41,7 @@ function getUncompressedSize(input: any, size: number | bigint) {
   if (size > -1) {
     return BigInt(size);
   }
-  return input ? undefined : 0n;
+  return input ? undefined : BigInt(0);
 }
 
 function normalizeName(name: unknown): [encodedName: Uint8Array | undefined, nameIsBuffer: boolean] {

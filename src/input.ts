@@ -1,4 +1,4 @@
-import { encodeString, makeUint8Array } from "./utils.ts"
+import { encodeString, makeUint8Array } from "./utils"
 
 export type BufferLike = ArrayBuffer | string | ArrayBufferView | Blob
 export type StreamLike = ReadableStream<Uint8Array> | AsyncIterable<BufferLike>
@@ -64,7 +64,7 @@ export function ReadableFromIterator<T extends BufferLike>(iter: AsyncIterator<T
       }
     },
     cancel(err) {
-      upstream.throw?.(err)
+      upstream.throw && upstream.throw(err)
     }
   })
 }
